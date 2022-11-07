@@ -1,6 +1,8 @@
 #define speakerPinGs2 6
 #define speakerPinB2 3
 #define speakerPinA2 7
+#define speakerPinC3 9
+#define speakerPinD3 10
 #define buttonGs2 5
 #define buttonB2 4
 #define buttonA2 2
@@ -8,14 +10,14 @@
 
 byte notesActive = 0;
 String button = "button";
-const char* buttons[12] = {"buttonGs2","buttonB2","buttonA2","buttonAll"}; //array to track all buttons currently pressed
-const char* buttonsPressed[12];
-
-String keyToPitch[5][2] = {{"Gs2", "24"},
-                          {"A2", "20"},
-                          {"B2", "27"},
-                          {"C3", "28"},
-                          {"D3", "30"}};
+const char* buttons[12] = {buttonGs2,buttonB2,buttonA2,buttonAll}; //array to track all buttons currently pressed
+byte pressed[12];
+byte pressedCopy[12]; //meant to be separate from pressed in memory to check against pressed
+int keyToPitch[5][2] = {{speakerPinGs2, 24},
+                          {speakerPinA2, 20},
+                          {speakerPinB2, 27},
+                          {speakerPinC3, 28},
+                          {speakerPinD3, 30}};
 
 int pinToChar[7] = {6,3,7,5,4,2,8};
 const char* DUPpinToChar[7][2] = {{"speakerPinGs2", "6"},
@@ -29,14 +31,13 @@ const char* DUPpinToChar[7][2] = {{"speakerPinGs2", "6"},
 
 
 //returns note at index [i][1]
-String noteInArray(String note) {
-  String subNote = note.substring(10);
+int noteInArray(const char* note) {
   for (int i = 0; i < 5; i++) {
-    if (keyToPitch[i][0].equals(subNote)) {
+    if (keyToPitch[i][0] == note) {
       return keyToPitch[i][1];
     }
   }
-  return "";
+  return -1;
 }
 
 int pinToInt(const char* note) {
@@ -92,7 +93,6 @@ void playNoteA2() {
     if (millis() - lastPressed >= halfPeriodA2) {
       digitalWrite(speakerPinB2, i);
       i = !i;
-      Serial.println(i);
       lastPressed = millis();
     }
   
@@ -125,7 +125,7 @@ void playNotesGs2B2() {
 
 //plays 1 note
 void playNote(const char* note1) {
-  long halfPeriod1 = getPeriodForKey(noteInArray(note1).toInt()) / 2;
+  long halfPeriod1 = getPeriodForKey(noteInArray(note1)) / 2;
 
   unsigned long lastPressed1 = micros(); //stores last time pressed (microseconds) for periods elapsed
 
@@ -133,19 +133,22 @@ void playNote(const char* note1) {
 
   boolean i = HIGH;
   
-  while(digitalRead(button1) == 0) {
+  while(checkSamePressed(pressedCopy)) {
     if (micros() - lastPressed1 >= halfPeriod1) {
       digitalWrite(note1, i);
       i = !i;
       lastPressed1 = micros();
     }
   }
+  for (int i = 0; i < 3; i++) { //checks buttons pushed
+    pressed[i] = digitalRead(buttons[i]);
+  }
 }
 
 //plays 2 notes simultaneously
 void playNotes(const char* note1, const char* note2) {
-  long halfPeriod1 = getPeriodForKey(noteInArray(note1).toInt()) / 2;
-  long halfPeriod2 = getPeriodForKey(noteInArray(note2).toInt()) / 2;
+  long halfPeriod1 = getPeriodForKey(noteInArray(note1)) / 2;
+  long halfPeriod2 = getPeriodForKey(noteInArray(note2)) / 2;
 
   unsigned long lastPressed1 = micros(); //stores last time pressed (microseconds) for periods elapsed
   unsigned long lastPressed2 = micros();
@@ -154,8 +157,8 @@ void playNotes(const char* note1, const char* note2) {
   int button2 = pinToInt(note2);
 
   boolean i, j = HIGH;
-  
-  while(digitalRead(button1) == 0) {
+
+  while(checkSamePressed(pressedCopy)) {
     if (micros() - lastPressed1 >= halfPeriod1) {
       digitalWrite(note1, i);
       i = !i;
@@ -167,12 +170,15 @@ void playNotes(const char* note1, const char* note2) {
       lastPressed2 = micros();
     }
   }
+  for (int i = 0; i < 3; i++) { //checks buttons pushed
+    pressed[i] = digitalRead(buttons[i]);
+  }
 }
 
-void playNotes(const char* note1, const char* note2, const char* note3) {
-  long halfPeriod1 = getPeriodForKey(noteInArray(note1).toInt()) / 2;
-  long halfPeriod2 = getPeriodForKey(noteInArray(note2).toInt()) / 2;
-  long halfPeriod3 = getPeriodForKey(noteInArray(note3).toInt()) / 2;
+void playNotes(const char* note1, const char* note2, const char* note3) { //takes in the speaker pin (i.e. note1 = speakerPinA2)
+  long halfPeriod1 = getPeriodForKey(noteInArray(note1)) / 2;
+  long halfPeriod2 = getPeriodForKey(noteInArray(note2)) / 2;
+  long halfPeriod3 = getPeriodForKey(noteInArray(note3)) / 2;
 
   unsigned long lastPressed1 = micros(); //stores last time pressed (microseconds) for periods elapsed
   unsigned long lastPressed2 = micros();
@@ -184,7 +190,7 @@ void playNotes(const char* note1, const char* note2, const char* note3) {
 
   boolean i, j, k = HIGH;
   
-  while(digitalRead(button1) == 0 && digitalRead(button2) == 0 && digitalRead(button3) == 0) {
+  while(checkSamePressed(pressedCopy)) {
     if (micros() - lastPressed1 >= halfPeriod1) {
       digitalWrite(note1, i);
       i = !i;
@@ -201,7 +207,9 @@ void playNotes(const char* note1, const char* note2, const char* note3) {
       lastPressed3 = micros();
     }
   }
-  
+  for (int i = 0; i < 3; i++) { //checks buttons pushed
+    pressed[i] = digitalRead(buttons[i]);
+  }
 }
 
 /*
@@ -235,35 +243,50 @@ void wait(long us) {
   delayMicroseconds(us % 1000);
 }
 
-void checkPressed() {
-  int j = 0;
-  for (int i = 0; i < (sizeof(buttons) / sizeof(buttons[0])); i++) {
-    if (digitalRead(buttons[i]) == 0) {
-      buttonsPressed[j] = buttons[i];
-      j++;
-    }
+boolean checkSamePressed(const char* buttonsPressed) {
+
+  for (int i = 0; i < 3; i++) {
+    pressedCopy[i] = pressed[i];
+    pressed[i] = digitalRead(buttons[i]);
+    if (pressed[i] != buttonsPressed[i]) {
+      return false;
+    } 
   }
+  return true;
 }
+
 void loop() {
+  for (int i = 0; i < 3; i++) { //checks buttons pushed
+    pressed[i] = digitalRead(buttons[i]);
+  }
+
   if(digitalRead(buttonB2) == 0 && digitalRead(buttonGs2)==0 && digitalRead(buttonA2)== 0) {
-    Serial.println("all notes");
-    playNotes("speakerPinGs2","speakerPinB3","speakerPinA2");
+    Serial.println("G#2, A2, B2");
+    playNotes(speakerPinGs2,speakerPinB2,speakerPinA2);
   }
   else if (digitalRead(buttonA2) == 1 && digitalRead(buttonB2) == 1 && digitalRead(buttonGs2)==0) {
     Serial.println("G#2");
-    playNoteGs2();
+    playNote(speakerPinGs2);
   }
   else if (digitalRead(buttonA2) == 1 && digitalRead(buttonB2) == 0 && digitalRead(buttonGs2)==1) {
     Serial.println("B2");
-    playNoteB2();
+    playNote(speakerPinB2);
   }
   else if (digitalRead(buttonA2) == 0 && digitalRead(buttonB2) == 1 && digitalRead(buttonGs2)==1) {
     Serial.println("A2");
-    playNoteA2();
+    playNote(speakerPinA2);
   }
   else if (digitalRead(buttonB2) == 0 && digitalRead(buttonGs2)==0 && digitalRead(buttonA2) == 1) {
     Serial.println("B2 and G#2");
-    playNotesGs2B2();
+    playNotes(speakerPinB2, speakerPinGs2);
+  }
+  else if (digitalRead(buttonB2) == 1 && digitalRead(buttonGs2)==0 && digitalRead(buttonA2) == 0) {
+    Serial.println("G#2 and A2");
+    playNotes(speakerPinGs2, speakerPinA2);
+  }
+  else if (digitalRead(buttonB2) == 0 && digitalRead(buttonGs2)==1 && digitalRead(buttonA2) == 0) {
+    Serial.println("B2 and A2");
+    playNotes(speakerPinB2, speakerPinA2);
   }
 
 
